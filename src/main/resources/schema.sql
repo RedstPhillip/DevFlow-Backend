@@ -5,10 +5,66 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP(3) NOT NULL
 );
 
+-- A workspace is the top-level container. Every user gets one auto-created
+-- "Persönlich" workspace during register() (is_personal = TRUE) and may own/join
+-- more. Rollen-Enum ist Phase-2b-MVP zweistufig: OWNER | MEMBER. ADMIN +
+-- workspace_groups (Ordner) kommen in späteren Phasen.
+--
+-- owner_id ist nullable + ON DELETE SET NULL: verwaister Workspace statt
+-- kaskadiertem Daten-Killer. Personal-Workspaces werden heute nicht extra
+-- geschützt, da User-Delete-Endpoint ebenfalls noch nicht existiert — beides
+-- in HANDOVER festhalten.
+CREATE TABLE IF NOT EXISTS workspaces (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    owner_id BIGINT NULL,
+    invite_code CHAR(8) NOT NULL UNIQUE,
+    is_personal BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP(3) NOT NULL,
+    CONSTRAINT fk_workspaces_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS workspace_members (
+    workspace_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    role VARCHAR(20) NOT NULL,             -- 'OWNER' | 'MEMBER'
+    joined_at TIMESTAMP(3) NOT NULL,
+    PRIMARY KEY (workspace_id, user_id),
+    INDEX idx_workspace_members_user_id (user_id),
+    CONSTRAINT fk_workspace_members_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+    CONSTRAINT fk_workspace_members_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- DM rows use only id / type = 'DM' / created_at. GROUP rows additionally carry
+-- name, owner_id, member_add_policy (Phase 2a.5) and an optional workspace_id
+-- (Phase 2b). Keeping everything in one table avoids a per-type join while
+-- leaving DM paths untouched. DMs always have workspace_id = NULL by
+-- convention.
+--
+-- NOTE on migrations: this file uses CREATE TABLE IF NOT EXISTS. A pre-existing
+-- chats table WITHOUT the trailing columns will NOT be altered by this script.
+-- For a local dev DB, drop/recreate. For production in-place migration:
+--   ALTER TABLE chats
+--       ADD COLUMN name VARCHAR(100) NULL,
+--       ADD COLUMN owner_id BIGINT NULL,
+--       ADD COLUMN member_add_policy VARCHAR(20) NULL,
+--       ADD COLUMN workspace_id BIGINT NULL,
+--       ADD CONSTRAINT fk_chats_owner
+--           FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
+--       ADD CONSTRAINT fk_chats_workspace
+--           FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL;
+--   CREATE INDEX idx_chats_workspace_id ON chats(workspace_id);
 CREATE TABLE IF NOT EXISTS chats (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     type VARCHAR(20) NOT NULL,
-    created_at TIMESTAMP(3) NOT NULL
+    created_at TIMESTAMP(3) NOT NULL,
+    name VARCHAR(100) NULL,
+    owner_id BIGINT NULL,
+    member_add_policy VARCHAR(20) NULL,
+    workspace_id BIGINT NULL,
+    INDEX idx_chats_workspace_id (workspace_id),
+    CONSTRAINT fk_chats_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_chats_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS chat_participants (

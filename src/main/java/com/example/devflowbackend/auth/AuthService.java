@@ -10,6 +10,7 @@ import com.example.devflowbackend.repository.RefreshTokenRepository;
 import com.example.devflowbackend.repository.UserRepository;
 import com.example.devflowbackend.security.JwtProperties;
 import com.example.devflowbackend.security.JwtService;
+import com.example.devflowbackend.workspaces.WorkspaceService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -31,19 +32,22 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
+    private final WorkspaceService workspaceService;
 
     public AuthService(
             UserRepository userRepository,
             RefreshTokenRepository refreshTokenRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            JwtProperties jwtProperties
+            JwtProperties jwtProperties,
+            WorkspaceService workspaceService
     ) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.jwtProperties = jwtProperties;
+        this.workspaceService = workspaceService;
     }
 
     @Transactional
@@ -60,6 +64,13 @@ public class AuthService {
         } catch (DataIntegrityViolationException ex) {
             throw new ApiException(HttpStatus.CONFLICT, "Username already taken");
         }
+
+        // Every new user gets exactly one personal workspace so downstream
+        // code (e.g. the K7 fallback in ChatService) can rely on its presence.
+        // This call lives in the same @Transactional boundary as the user
+        // insert above — if the workspace insert fails, the user insert is
+        // rolled back too, preserving the "≥1 workspace per user" invariant.
+        workspaceService.createPersonalWorkspace(user.id());
 
         return issueAuthResponse(user);
     }
