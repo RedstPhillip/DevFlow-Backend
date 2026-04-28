@@ -88,6 +88,8 @@ jobs:
             docker run -d \
               --name app-\$BRANCH \
               --network web \
+              -e "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
+              -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
               -l "traefik.enable=true" \
               -l "traefik.http.routers.\$BRANCH.rule=\$RULE" \
               -l "traefik.http.routers.\$BRANCH.priority=\$PRIORITY" \
