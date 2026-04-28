@@ -50,14 +50,22 @@ jobs:
       - name: Build JAR
         run: ./mvnw clean package -DskipTests
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
-        run: docker build -t spring-app:${{ env.BRANCH_NAME }} .
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            -t spring-app:${{ env.BRANCH_NAME }} \
+            --output type=docker \
+            .
 
       - name: Save Docker image
         run: docker save spring-app:${{ env.BRANCH_NAME }} > image.tar
 
       - name: Copy image to Pi
-        run: scp -F $HOME/.ssh/config image.tar r1:/home/pi/
+        run: scp -F $HOME/.ssh/config image.tar r1:~/
 
       - name: Deploy on Pi
         run: |
@@ -65,15 +73,15 @@ jobs:
             set -e
             BRANCH=${{ env.BRANCH_NAME }}
 
-            docker load < /home/pi/image.tar
+            docker load < ~/image.tar
             docker stop app-\$BRANCH || true
             docker rm app-\$BRANCH || true
 
             if [ "\$BRANCH" = "main" ]; then
-              RULE="PathPrefix(\`/\`)"
+              RULE="PathPrefix(\"/\")"
               PRIORITY=1
             else
-              RULE="PathPrefix(\`/\$BRANCH\`)"
+              RULE="PathPrefix(\"/\$BRANCH\")"
               PRIORITY=10
             fi
 
@@ -88,6 +96,6 @@ jobs:
               -l "traefik.http.services.\$BRANCH.loadbalancer.server.port=8080" \
               spring-app:\$BRANCH
 
-            rm /home/pi/image.tar
+            rm ~/image.tar
             echo "Done: \$BRANCH"
           EOF
