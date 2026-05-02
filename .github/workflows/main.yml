@@ -39,6 +39,7 @@ jobs:
             echo "  IdentityFile ~/.ssh/id_ed25519"
             echo "  StrictHostKeyChecking yes"
           } > ~/.ssh/config
+
           chmod 600 ~/.ssh/config
 
       - name: Set up Java 21
@@ -73,6 +74,23 @@ jobs:
             set -e
             BRANCH=${{ env.BRANCH_NAME }}
 
+            # DB starten, falls noch nicht läuft
+            if ! docker ps -q --filter "name=devflow-db" | grep -q .; then
+              docker run -d \
+                --name devflow-db \
+                --network web \
+                --restart always \
+                -e MYSQL_ROOT_PASSWORD=${{ secrets.DB_PASSWORD }} \
+                -e MYSQL_DATABASE=devflow \
+                -e MYSQL_USER=${{ secrets.DB_USERNAME }} \
+                -e MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
+                -v devflow-db-data:/var/lib/mysql \
+                mysql:8.0
+
+              echo "Waiting for DB..."
+              sleep 15
+            fi
+
             docker load < ~/image.tar
             docker stop app-\$BRANCH || true
             docker rm app-\$BRANCH || true
@@ -88,6 +106,7 @@ jobs:
             docker run -d \
               --name app-\$BRANCH \
               --network web \
+              -e "DB_URL=jdbc:mysql://devflow-db:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
               -e "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
               -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
               -l "traefik.enable=true" \
