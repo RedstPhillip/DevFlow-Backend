@@ -85,7 +85,7 @@ jobs:
                 -e MYSQL_USER=${{ secrets.DB_USERNAME }} \
                 -e MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
                 -v devflow-db-data:/var/lib/mysql \
-                mysql:8.0
+                mariadb:lts
 
               echo "Waiting for DB..."
               sleep 15
