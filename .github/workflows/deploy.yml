@@ -68,40 +68,40 @@ jobs:
 
       - name: Deploy on Pi
         run: |
-          ssh -F $HOME/.ssh/config r1 << EOF
+          ssh -F $HOME/.ssh/config r1 << 'EOF'
             set -e
             BRANCH=${{ env.BRANCH_NAME }}
 
-            if ! docker ps -q --filter "name=db-\$BRANCH" | grep -q .; then
+            if ! docker ps -q --filter "name=db-$BRANCH" | grep -q .; then
               docker run -d \
-                --name db-\$BRANCH \
+                --name db-$BRANCH \
                 --network web \
                 --restart unless-stopped \
                 -e MYSQL_ROOT_PASSWORD=${{ secrets.DB_PASSWORD }} \
                 -e MYSQL_DATABASE=devflow \
                 -e MYSQL_USER=${{ secrets.DB_USERNAME }} \
                 -e MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
-                -v devflow-db-\$BRANCH:/var/lib/mysql \
+                -v devflow-db-$BRANCH:/var/lib/mysql \
                 mariadb:lts
             fi
 
             echo "Waiting for DB..."
-            until docker exec db-\$BRANCH mariadb-admin ping -uroot -p${{ secrets.DB_PASSWORD }} --silent 2>/dev/null; do
+            until docker exec db-$BRANCH mariadb-admin ping -uroot -p${{ secrets.DB_PASSWORD }} --silent 2>/dev/null; do
               echo "DB not ready yet..."
               sleep 3
             done
             echo "DB is ready!"
 
             docker load < ~/image.tar
-            docker stop app-\$BRANCH || true
-            docker rm app-\$BRANCH || true
+            docker stop app-$BRANCH || true
+            docker rm app-$BRANCH || true
 
-            if [ "\$BRANCH" = "main" ]; then
+            if [ "$BRANCH" = "main" ]; then
               docker run -d \
-                --name app-\$BRANCH \
+                --name app-$BRANCH \
                 --network web \
                 --restart unless-stopped \
-                -e "DB_URL=jdbc:mysql://db-\$BRANCH:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
+                -e "DB_URL=jdbc:mysql://db-$BRANCH:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
                 -e "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
                 -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
                 -l "traefik.enable=true" \
@@ -110,24 +110,24 @@ jobs:
                 -l "traefik.http.middlewares.main-strip.stripprefix.prefixes=/main" \
                 -l "traefik.http.routers.main.middlewares=main-strip" \
                 -l "traefik.http.services.main.loadbalancer.server.port=8080" \
-                spring-app:\$BRANCH
+                spring-app:$BRANCH
             else
               docker run -d \
-                --name app-\$BRANCH \
+                --name app-$BRANCH \
                 --network web \
                 --restart unless-stopped \
-                -e "DB_URL=jdbc:mysql://db-\$BRANCH:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
+                -e "DB_URL=jdbc:mysql://db-$BRANCH:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
                 -e "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
                 -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
                 -l "traefik.enable=true" \
-                -l "traefik.http.routers.\$BRANCH.rule=PathPrefix(\`/\$BRANCH\`)" \
-                -l "traefik.http.routers.\$BRANCH.priority=10" \
-                -l "traefik.http.middlewares.\$BRANCH-strip.stripprefix.prefixes=/\$BRANCH" \
-                -l "traefik.http.routers.\$BRANCH.middlewares=\$BRANCH-strip" \
-                -l "traefik.http.services.\$BRANCH.loadbalancer.server.port=8080" \
-                spring-app:\$BRANCH
+                -l "traefik.http.routers.$BRANCH.rule=PathPrefix(\`/$BRANCH\`)" \
+                -l "traefik.http.routers.$BRANCH.priority=10" \
+                -l "traefik.http.middlewares.$BRANCH-strip.stripprefix.prefixes=/$BRANCH" \
+                -l "traefik.http.routers.$BRANCH.middlewares=$BRANCH-strip" \
+                -l "traefik.http.services.$BRANCH.loadbalancer.server.port=8080" \
+                spring-app:$BRANCH
             fi
 
             rm ~/image.tar
-            echo "Done: \$BRANCH"
+            echo "Done: $BRANCH"
           EOF
