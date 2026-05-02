@@ -99,7 +99,7 @@ jobs:
             docker rm app-\$BRANCH || true
 
             if [ "\$BRANCH" = "main" ]; then
-              RULE="PathPrefix(\`/\`)"
+              RULE='PathPrefix(`/`)'
               PRIORITY=1
             else
               RULE="PathPrefix(\`/\$BRANCH\`)"
