@@ -72,7 +72,6 @@ jobs:
             set -e
             BRANCH=${{ env.BRANCH_NAME }}
 
-            # DB starten, falls noch nicht läuft
             if ! docker ps -q --filter "name=db-\$BRANCH" | grep -q .; then
               docker run -d \
                 --name db-\$BRANCH \
@@ -86,7 +85,6 @@ jobs:
                 mariadb:lts
             fi
 
-            # Warten bis DB wirklich bereit ist
             echo "Waiting for DB..."
             until docker exec db-\$BRANCH mariadb-admin ping -uroot -p${{ secrets.DB_PASSWORD }} --silent 2>/dev/null; do
               echo "DB not ready yet..."
@@ -99,27 +97,36 @@ jobs:
             docker rm app-\$BRANCH || true
 
             if [ "\$BRANCH" = "main" ]; then
-              RULE='PathPrefix(`/`)'
-              PRIORITY=1
+              docker run -d \
+                --name app-\$BRANCH \
+                --network web \
+                --restart unless-stopped \
+                -e "DB_URL=jdbc:mysql://db-\$BRANCH:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
+                -e "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
+                -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
+                -l "traefik.enable=true" \
+                -l 'traefik.http.routers.main.rule=PathPrefix(`/`)' \
+                -l "traefik.http.routers.main.priority=1" \
+                -l "traefik.http.middlewares.main-strip.stripprefix.prefixes=/main" \
+                -l "traefik.http.routers.main.middlewares=main-strip" \
+                -l "traefik.http.services.main.loadbalancer.server.port=8080" \
+                spring-app:\$BRANCH
             else
-              RULE="PathPrefix(\`/\$BRANCH\`)"
-              PRIORITY=10
+              docker run -d \
+                --name app-\$BRANCH \
+                --network web \
+                --restart unless-stopped \
+                -e "DB_URL=jdbc:mysql://db-\$BRANCH:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
+                -e "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
+                -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
+                -l "traefik.enable=true" \
+                -l "traefik.http.routers.\$BRANCH.rule=PathPrefix(\`/\$BRANCH\`)" \
+                -l "traefik.http.routers.\$BRANCH.priority=10" \
+                -l "traefik.http.middlewares.\$BRANCH-strip.stripprefix.prefixes=/\$BRANCH" \
+                -l "traefik.http.routers.\$BRANCH.middlewares=\$BRANCH-strip" \
+                -l "traefik.http.services.\$BRANCH.loadbalancer.server.port=8080" \
+                spring-app:\$BRANCH
             fi
-
-            docker run -d \
-              --name app-\$BRANCH \
-              --network web \
-              --restart unless-stopped \
-              -e "DB_URL=jdbc:mysql://db-\$BRANCH:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
-              -e "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
-              -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
-              -l "traefik.enable=true" \
-              -l "traefik.http.routers.\$BRANCH.rule=\$RULE" \
-              -l "traefik.http.routers.\$BRANCH.priority=\$PRIORITY" \
-              -l "traefik.http.middlewares.\$BRANCH-strip.stripprefix.prefixes=/\$BRANCH" \
-              -l "traefik.http.routers.\$BRANCH.middlewares=\$BRANCH-strip" \
-              -l "traefik.http.services.\$BRANCH.loadbalancer.server.port=8080" \
-              spring-app:\$BRANCH
 
             rm ~/image.tar
             echo "Done: \$BRANCH"
