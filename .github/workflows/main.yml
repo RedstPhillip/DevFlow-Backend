@@ -106,7 +106,7 @@ jobs:
             docker run -d \
               --name app-\$BRANCH \
               --network web \
-              --restart unless-stopped
+              --restart unless-stopped \
               -e "DB_URL=jdbc:mysql://devflow-db:3306/devflow?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC" \
               -e "DB_USERNAME=${{ secrets.DB_USERNAME }}" \
               -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
