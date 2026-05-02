@@ -1,0 +1,58 @@
+name: Cleanup Branch
+
+on:
+  delete:
+
+jobs:
+  cleanup:
+    if: github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set branch name (sanitized)
+        run: |
+          BRANCH=${{ github.event.ref }}
+          BRANCH=$(echo "$BRANCH" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
+          echo "BRANCH_NAME=$BRANCH" >> $GITHUB_ENV
+
+      - name: Install cloudflared
+        run: |
+          curl -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/
+
+      - name: Setup SSH via Cloudflare Tunnel
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PI_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          {
+            echo "Host r1"
+            echo "  HostName ${{ secrets.PI_HOST }}"
+            echo "  User ${{ secrets.PI_USER }}"
+            echo "  ProxyCommand $(which cloudflared) access ssh --hostname %h --id ${{ secrets.CF_TOKEN_ID }} --secret ${{ secrets.CF_TOKEN_SECRET }}"
+            echo "  IdentityFile ~/.ssh/id_ed25519"
+            echo "  StrictHostKeyChecking yes"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Cleanup on Pi
+        run: |
+          ssh -F $HOME/.ssh/config r1 << EOF
+            BRANCH=${{ env.BRANCH_NAME }}
+            echo "Cleaning up branch: \$BRANCH"
+
+            docker stop app-\$BRANCH || true
+            docker rm app-\$BRANCH || true
+
+            docker stop db-\$BRANCH || true
+            docker rm db-\$BRANCH || true
+
+            docker volume rm devflow-db-\$BRANCH || true
+
+            docker rmi spring-app:\$BRANCH || true
+
+            echo "Cleanup done: \$BRANCH"
+          EOF
