@@ -66,10 +66,36 @@ jobs:
             echo "Cleanup done: $BRANCH"
           EOF
 
-      - name: Delete GHCR image
+      - name: Delete tagged GHCR image via API
+        run: |
+          TAG=${{ env.BRANCH_NAME }}
+          VERSION_ID=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/user/packages/container/spring-app/versions" | \
+            python3 -c "
+          import sys, json
+          versions = json.load(sys.stdin)
+          for v in versions:
+              tags = v.get('metadata', {}).get('container', {}).get('tags', [])
+              if '$TAG' in tags:
+                  print(v['id'])
+                  break
+          ")
+          if [ -n "$VERSION_ID" ]; then
+            curl -s -X DELETE \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/user/packages/container/spring-app/versions/$VERSION_ID"
+            echo "Deleted version $VERSION_ID (tag: $TAG)"
+          else
+            echo "No version found for tag: $TAG"
+          fi
+
+      - name: Delete untagged GHCR images
         uses: actions/delete-package-versions@v5
         with:
           package-name: spring-app
           package-type: container
-          delete-tags: ${{ env.BRANCH_NAME }}
+          delete-only-untagged-versions: true
+          min-versions-to-keep: 0
         continue-on-error: true
