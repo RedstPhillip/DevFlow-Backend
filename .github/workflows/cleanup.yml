@@ -7,6 +7,9 @@ jobs:
   cleanup:
     if: github.event.ref_type == 'branch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Set branch name (sanitized)
@@ -40,19 +43,27 @@ jobs:
 
       - name: Cleanup on Pi
         run: |
-          ssh -F $HOME/.ssh/config r1 << EOF
+          ssh -F $HOME/.ssh/config r1 << 'EOF'
             BRANCH=${{ env.BRANCH_NAME }}
-            echo "Cleaning up branch: \$BRANCH"
+            echo "Cleaning up branch: $BRANCH"
 
-            docker stop app-\$BRANCH || true
-            docker rm app-\$BRANCH || true
+            docker stop app-$BRANCH || true
+            docker rm app-$BRANCH || true
 
-            docker stop db-\$BRANCH || true
-            docker rm db-\$BRANCH || true
+            docker stop db-$BRANCH || true
+            docker rm db-$BRANCH || true
 
-            docker volume rm devflow-db-\$BRANCH || true
+            docker volume rm devflow-db-$BRANCH || true
 
-            docker rmi spring-app:\$BRANCH || true
+            docker rmi ghcr.io/${{ github.repository_owner }}/spring-app:$BRANCH || true
 
-            echo "Cleanup done: \$BRANCH"
+            echo "Cleanup done: $BRANCH"
           EOF
+
+      - name: Delete GHCR image
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: spring-app
+          package-type: container
+          delete-tags: ${{ env.BRANCH_NAME }}
+        continue-on-error: true

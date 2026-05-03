@@ -6,6 +6,9 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -52,25 +55,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
+      - name: Build & Push Docker image to GHCR
         run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker buildx build \
             --platform linux/arm64 \
-            -t spring-app:${{ env.BRANCH_NAME }} \
-            --output type=docker \
+            -t ghcr.io/${{ github.repository_owner }}/spring-app:${{ env.BRANCH_NAME }} \
+            --push \
             .
-
-      - name: Save Docker image
-        run: docker save spring-app:${{ env.BRANCH_NAME }} > image.tar
-
-      - name: Copy image to Pi
-        run: scp -F $HOME/.ssh/config image.tar r1:~/
 
       - name: Deploy on Pi
         run: |
           ssh -F $HOME/.ssh/config r1 << 'EOF'
             set -e
             BRANCH=${{ env.BRANCH_NAME }}
+
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             if ! docker ps -q --filter "name=db-$BRANCH" | grep -q .; then
               docker run -d \
@@ -92,7 +92,8 @@ jobs:
             done
             echo "DB is ready!"
 
-            docker load < ~/image.tar
+            docker pull ghcr.io/${{ github.repository_owner }}/spring-app:$BRANCH
+
             docker stop app-$BRANCH || true
             docker rm app-$BRANCH || true
 
@@ -110,7 +111,7 @@ jobs:
                 -l "traefik.http.middlewares.main-strip.stripprefix.prefixes=/main" \
                 -l "traefik.http.routers.main.middlewares=main-strip" \
                 -l "traefik.http.services.main.loadbalancer.server.port=8080" \
-                spring-app:$BRANCH
+                ghcr.io/${{ github.repository_owner }}/spring-app:$BRANCH
             else
               docker run -d \
                 --name app-$BRANCH \
@@ -125,9 +126,8 @@ jobs:
                 -l "traefik.http.middlewares.$BRANCH-strip.stripprefix.prefixes=/$BRANCH" \
                 -l "traefik.http.routers.$BRANCH.middlewares=$BRANCH-strip" \
                 -l "traefik.http.services.$BRANCH.loadbalancer.server.port=8080" \
-                spring-app:$BRANCH
+                ghcr.io/${{ github.repository_owner }}/spring-app:$BRANCH
             fi
 
-            rm ~/image.tar
             echo "Done: $BRANCH"
           EOF
