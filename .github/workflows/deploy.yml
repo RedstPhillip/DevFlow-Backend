@@ -20,6 +20,11 @@ jobs:
           BRANCH=$(echo "$BRANCH" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
           echo "BRANCH_NAME=$BRANCH" >> $GITHUB_ENV
 
+      - name: Set owner lowercase
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER=$OWNER" >> $GITHUB_ENV
+
       - name: Install cloudflared
         run: |
           curl -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
@@ -60,7 +65,7 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker buildx build \
             --platform linux/arm64 \
-            -t ghcr.io/${{ github.repository_owner }}/spring-app:${{ env.BRANCH_NAME }} \
+            -t ghcr.io/${{ env.OWNER }}/spring-app:${{ env.BRANCH_NAME }} \
             --push \
             .
 
@@ -69,6 +74,7 @@ jobs:
           ssh -F $HOME/.ssh/config r1 << 'EOF'
             set -e
             BRANCH=${{ env.BRANCH_NAME }}
+            OWNER=${{ env.OWNER }}
 
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
@@ -92,7 +98,7 @@ jobs:
             done
             echo "DB is ready!"
 
-            docker pull ghcr.io/${{ github.repository_owner }}/spring-app:$BRANCH
+            docker pull ghcr.io/$OWNER/spring-app:$BRANCH
 
             docker stop app-$BRANCH || true
             docker rm app-$BRANCH || true
@@ -111,7 +117,7 @@ jobs:
                 -l "traefik.http.middlewares.main-strip.stripprefix.prefixes=/main" \
                 -l "traefik.http.routers.main.middlewares=main-strip" \
                 -l "traefik.http.services.main.loadbalancer.server.port=8080" \
-                ghcr.io/${{ github.repository_owner }}/spring-app:$BRANCH
+                ghcr.io/$OWNER/spring-app:$BRANCH
             else
               docker run -d \
                 --name app-$BRANCH \
@@ -126,7 +132,7 @@ jobs:
                 -l "traefik.http.middlewares.$BRANCH-strip.stripprefix.prefixes=/$BRANCH" \
                 -l "traefik.http.routers.$BRANCH.middlewares=$BRANCH-strip" \
                 -l "traefik.http.services.$BRANCH.loadbalancer.server.port=8080" \
-                ghcr.io/${{ github.repository_owner }}/spring-app:$BRANCH
+                ghcr.io/$OWNER/spring-app:$BRANCH
             fi
 
             echo "Done: $BRANCH"
